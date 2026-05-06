@@ -1,0 +1,36 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+.venv/
+.venv311/
+*.egg-info/
+dist/
+build/
+
+# Audio outputs (runtime artifacts)
+outputs/
+*.wav
+*.mp3
+*.mp4
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Local DB
+*.db
+*.sqlite3
+
+# Logs
+*.log
+logs.txt
