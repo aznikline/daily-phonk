@@ -8,6 +8,9 @@ import yaml
 from typing import Optional
 from pathlib import Path
 import secrets
+import datetime as _dt
+import time
+import requests
 
 from src.generator import DailyPhonkGenerator
 from src.metadata import generate_publishing_assets
@@ -98,6 +101,174 @@ def _outputs_root_dir() -> str:
     return str(root)
 
 
+def _output_filename_prefix() -> str:
+    raw_config = get_config_dict()
+    out_cfg = raw_config.get("output", {})
+    prefix = out_cfg.get("filename_prefix", "daily_phonk")
+    return str(prefix)
+
+
+def _ensure_output_dir(day: _dt.date) -> str:
+    root = _outputs_root_dir()
+    year = f"{day.year:04d}"
+    month = f"{day.month:02d}"
+    day_s = f"{day.day:02d}"
+    path = os.path.join(root, year, month, day_s)
+    os.makedirs(path, exist_ok=True)
+    return path
+
+
+def _replicate_required_env(name: str) -> str:
+    v = os.environ.get(name, "").strip()
+    if not v:
+        raise HTTPException(status_code=500, detail=f"Missing env var: {name}")
+    return v
+
+
+def _replicate_optional_env(name: str, default: str) -> str:
+    v = os.environ.get(name, "").strip()
+    return v or default
+
+
+def _replicate_headers() -> dict:
+    token = _replicate_required_env("REPLICATE_API_TOKEN")
+    return {
+        "Authorization": f"Token {token}",
+        "Content-Type": "application/json",
+    }
+
+
+def _replicate_model_version() -> str | None:
+    return os.environ.get("REPLICATE_VERSION", "").strip() or None
+
+
+def _replicate_model() -> str:
+    return _replicate_required_env("REPLICATE_MODEL")
+
+
+def _replicate_input(prompt: str, duration: int, seed: int | None) -> dict:
+    prompt_key = _replicate_optional_env("REPLICATE_PROMPT_KEY", "prompt")
+    duration_key = _replicate_optional_env("REPLICATE_DURATION_KEY", "duration")
+    seed_key = os.environ.get("REPLICATE_SEED_KEY", "").strip()
+
+    input_dict: dict = {
+        prompt_key: prompt,
+        duration_key: duration,
+    }
+    if seed is not None and seed_key:
+        input_dict[seed_key] = seed
+    return input_dict
+
+
+def _replicate_create_prediction(prompt: str, duration: int, seed: int | None) -> dict:
+    version = _replicate_model_version()
+    payload: dict = {
+        "input": _replicate_input(prompt=prompt, duration=duration, seed=seed),
+    }
+    if version:
+        payload["version"] = version
+    else:
+        payload["model"] = _replicate_model()
+
+    r = requests.post(
+        "https://api.replicate.com/v1/predictions",
+        headers=_replicate_headers(),
+        json=payload,
+        timeout=60,
+    )
+    if r.status_code >= 400:
+        raise HTTPException(status_code=500, detail=f"Replicate error: {r.status_code} {r.text[:300]}")
+    return r.json()
+
+
+def _replicate_get_prediction(pred_id: str) -> dict:
+    r = requests.get(
+        f"https://api.replicate.com/v1/predictions/{pred_id}",
+        headers=_replicate_headers(),
+        timeout=60,
+    )
+    if r.status_code >= 400:
+        raise HTTPException(status_code=500, detail=f"Replicate error: {r.status_code} {r.text[:300]}")
+    return r.json()
+
+
+def _replicate_wait(pred_id: str, timeout_seconds: int = 600) -> dict:
+    start = time.time()
+    while True:
+        data = _replicate_get_prediction(pred_id)
+        status = data.get("status")
+        if status in ("succeeded", "failed", "canceled"):
+            return data
+        if time.time() - start > timeout_seconds:
+            raise HTTPException(status_code=504, detail="Replicate timeout")
+        time.sleep(2)
+
+
+def _replicate_output_url(output) -> str:
+    if isinstance(output, str):
+        return output
+    if isinstance(output, list) and output:
+        if isinstance(output[0], str):
+            return output[0]
+    if isinstance(output, dict):
+        for k in ("audio", "output", "url"):
+            v = output.get(k)
+            if isinstance(v, str):
+                return v
+    raise HTTPException(status_code=500, detail="Replicate output format not recognized")
+
+
+def _download_to_outputs(url: str, style_key: str, prefix: str, day: _dt.date, seed: int | None) -> str:
+    out_dir = _ensure_output_dir(day)
+    ts = _dt.datetime.now().strftime("%H%M%S")
+    date_str = day.strftime("%Y%m%d")
+    seed_part = f"_{seed}" if seed is not None else ""
+    filename = f"{date_str}_{style_key}_{prefix}{seed_part}_{ts}.wav"
+    path = os.path.join(out_dir, filename)
+
+    with requests.get(url, stream=True, timeout=120) as r:
+        if r.status_code >= 400:
+            raise HTTPException(status_code=500, detail=f"Replicate download error: {r.status_code}")
+        with open(path, "wb") as f:
+            for chunk in r.iter_content(chunk_size=1024 * 1024):
+                if chunk:
+                    f.write(chunk)
+
+    return path
+
+
+def _generate_replicate(prompt: str, style_key: str, duration: int, seed: int | None) -> dict:
+    created = _replicate_create_prediction(prompt=prompt, duration=duration, seed=seed)
+    pred_id = created.get("id")
+    if not pred_id:
+        raise HTTPException(status_code=500, detail="Replicate response missing prediction id")
+
+    done = _replicate_wait(pred_id)
+    if done.get("status") != "succeeded":
+        err = done.get("error") or "Replicate prediction failed"
+        raise HTTPException(status_code=500, detail=str(err)[:400])
+
+    output_url = _replicate_output_url(done.get("output"))
+    today = _dt.date.today()
+    out_path = _download_to_outputs(
+        url=output_url,
+        style_key=f"replicate_{style_key}",
+        prefix=_output_filename_prefix(),
+        day=today,
+        seed=seed,
+    )
+
+    return {
+        "path": out_path,
+        "style_id": f"replicate_{style_key}",
+        "style_prompt": prompt,
+        "date": today.strftime("%Y-%m-%d"),
+        "backend": "replicate",
+        "duration": duration,
+        "replicate_prediction_id": pred_id,
+    }
+
+
 @app.post("/generate")
 async def generate_song(req: GenerateRequest, background_tasks: BackgroundTasks):
     if not req.song_name.strip():
@@ -107,12 +278,15 @@ async def generate_song(req: GenerateRequest, background_tasks: BackgroundTasks)
     prompt = _build_prompt(req.song_name.strip(), style_key, req.extra_requirements)
     
     try:
-        result = generator.generate_custom(
-            prompt=prompt,
-            style_id=f"remix_{style_key}",
-            duration=req.duration,
-            backend=req.backend
-        )
+        if (req.backend or "").lower() == "replicate":
+            result = _generate_replicate(prompt=prompt, style_key=style_key, duration=int(req.duration or 30), seed=None)
+        else:
+            result = generator.generate_custom(
+                prompt=prompt,
+                style_id=f"remix_{style_key}",
+                duration=req.duration,
+                backend=req.backend
+            )
         
         # 异步处理后续统计和生成附加资产
         raw_config = get_config_dict()
@@ -144,13 +318,16 @@ async def preview_song(req: PreviewRequest):
     for _ in range(candidates):
         seed = secrets.randbelow(2**31 - 1)
         try:
-            result = generator.generate_custom(
-                prompt=prompt,
-                style_id=f"preview_{style_key}",
-                duration=duration,
-                backend=req.backend,
-                seed=seed,
-            )
+            if (req.backend or "").lower() == "replicate":
+                result = _generate_replicate(prompt=prompt, style_key=style_key, duration=duration, seed=seed)
+            else:
+                result = generator.generate_custom(
+                    prompt=prompt,
+                    style_id=f"preview_{style_key}",
+                    duration=duration,
+                    backend=req.backend,
+                    seed=seed,
+                )
         except Exception as e:
             raise HTTPException(status_code=500, detail=str(e))
 
@@ -180,13 +357,16 @@ async def publish_song(req: PublishRequest, background_tasks: BackgroundTasks):
     seed = req.seed if req.seed is not None else secrets.randbelow(2**31 - 1)
 
     try:
-        result = generator.generate_custom(
-            prompt=prompt,
-            style_id=f"remix_{style_key}",
-            duration=duration,
-            backend=req.backend,
-            seed=seed,
-        )
+        if (req.backend or "").lower() == "replicate":
+            result = _generate_replicate(prompt=prompt, style_key=style_key, duration=duration, seed=seed)
+        else:
+            result = generator.generate_custom(
+                prompt=prompt,
+                style_id=f"remix_{style_key}",
+                duration=duration,
+                backend=req.backend,
+                seed=seed,
+            )
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
