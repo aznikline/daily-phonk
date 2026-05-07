@@ -41,6 +41,11 @@
 
         <form id="generateForm" class="space-y-6">
             <div>
+                <label for="apiBase" class="block text-sm font-medium text-slate-300 mb-1">API 地址</label>
+                <input type="text" id="apiBase" placeholder="例如：http://localhost:8000 或 https://api.yourdomain.com"
+                    class="w-full bg-slate-800 border border-slate-600 rounded-lg px-4 py-3 text-white placeholder-slate-500 focus:outline-none focus:border-purple-500 focus:ring-1 focus:ring-purple-500 transition">
+            </div>
+            <div>
                 <label for="songName" class="block text-sm font-medium text-slate-300 mb-1">输入歌名 / 歌手</label>
                 <input type="text" id="songName" required placeholder="例如：告白气球、周杰伦" 
                     class="w-full bg-slate-800 border border-slate-600 rounded-lg px-4 py-3 text-white placeholder-slate-500 focus:outline-none focus:border-purple-500 focus:ring-1 focus:ring-purple-500 transition">
@@ -51,7 +56,13 @@
                 <select id="styleSelect" 
                     class="w-full bg-slate-800 border border-slate-600 rounded-lg px-4 py-3 text-white focus:outline-none focus:border-purple-500 focus:ring-1 focus:ring-purple-500 transition appearance-none">
                     <!-- 动态加载选项 -->
+                    <option value="rnb">复古 R&B (氛围)</option>
+                    <option value="neosoul">Neo-Soul (松弛)</option>
+                    <option value="citypop">City Pop (夜景)</option>
+                    <option value="lofi">Lo-fi Chill (治愈)</option>
                     <option value="dj">DJ 舞曲版 (高燃)</option>
+                    <option value="house">House (Club)</option>
+                    <option value="techno">Techno (硬核)</option>
                     <option value="slowed">慢速回响版 (氛围)</option>
                     <option value="lyrical">抒情钢琴版 (走心)</option>
                     <option value="phonk">暗黑 Phonk (经典)</option>
@@ -62,8 +73,8 @@
 
             <div class="flex items-center space-x-4">
                 <div class="flex-1">
-                    <label for="duration" class="block text-sm font-medium text-slate-300 mb-1">时长 (秒)</label>
-                    <input type="number" id="duration" value="30" min="10" max="120"
+                    <label for="duration" class="block text-sm font-medium text-slate-300 mb-1">完整版时长 (秒)</label>
+                    <input type="number" id="duration" value="45" min="15" max="120"
                         class="w-full bg-slate-800 border border-slate-600 rounded-lg px-4 py-3 text-white focus:outline-none focus:border-purple-500 transition">
                 </div>
                 <div class="flex-1">
@@ -75,10 +86,32 @@
                 </div>
             </div>
 
-            <button type="submit" id="submitBtn" 
+            <div class="flex items-center space-x-4">
+                <div class="flex-1">
+                    <label for="candidates" class="block text-sm font-medium text-slate-300 mb-1">体验片段候选数</label>
+                    <select id="candidates" class="w-full bg-slate-800 border border-slate-600 rounded-lg px-4 py-3 text-white focus:outline-none focus:border-purple-500 transition">
+                        <option value="3">3</option>
+                        <option value="4">4</option>
+                        <option value="5">5</option>
+                    </select>
+                </div>
+                <div class="flex-1">
+                    <label for="previewDuration" class="block text-sm font-medium text-slate-300 mb-1">体验片段时长 (秒)</label>
+                    <input type="number" id="previewDuration" value="15" min="10" max="30"
+                        class="w-full bg-slate-800 border border-slate-600 rounded-lg px-4 py-3 text-white focus:outline-none focus:border-purple-500 transition">
+                </div>
+            </div>
+
+            <div>
+                <label for="extra" class="block text-sm font-medium text-slate-300 mb-1">额外要求</label>
+                <textarea id="extra" rows="3" placeholder="例如：2006复古R&B质感，主歌克制，副歌爆开，Rhodes电钢+电吉他切片，雨夜通勤氛围"
+                    class="w-full bg-slate-800 border border-slate-600 rounded-lg px-4 py-3 text-white placeholder-slate-500 focus:outline-none focus:border-purple-500 focus:ring-1 focus:ring-purple-500 transition"></textarea>
+            </div>
+
+            <button type="submit" id="previewBtn" 
                 class="w-full bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 text-white font-bold py-3 px-4 rounded-lg shadow-lg transform transition hover:-translate-y-0.5 flex items-center justify-center gap-2">
                 <i class="fas fa-magic"></i>
-                <span>立即改编</span>
+                <span>生成体验片段</span>
             </button>
         </form>
 
@@ -89,54 +122,179 @@
             <p class="text-slate-500 text-xs">（初次加载模型可能需要几分钟）</p>
         </div>
 
-        <!-- 结果展示 -->
+        <div id="previewBox" class="hidden mt-8 p-4 bg-slate-800 rounded-xl border border-purple-500/30">
+            <h3 class="text-lg font-bold text-white mb-2">体验片段（选择一个做完整版）</h3>
+            <div id="previewList" class="space-y-4"></div>
+        </div>
+
         <div id="resultBox" class="hidden mt-8 p-4 bg-slate-800 rounded-xl border border-purple-500/30">
-            <h3 class="text-lg font-bold text-white mb-2" id="resultTitle">生成成功！</h3>
+            <h3 class="text-lg font-bold text-white mb-2" id="resultTitle">已生成完整版</h3>
             <p class="text-sm text-slate-400 mb-4" id="resultPrompt"></p>
             
             <audio id="audioPlayer" controls class="w-full mb-4">
                 <source src="" type="audio/wav">
                 您的浏览器不支持音频播放。
             </audio>
-            
-            <a id="downloadBtn" href="#" download
-                class="block text-center w-full bg-slate-700 hover:bg-slate-600 text-white py-2 rounded-lg transition text-sm">
-                <i class="fas fa-download mr-2"></i>保存至本地
-            </a>
+
+            <div class="grid grid-cols-1 gap-2">
+                <a id="downloadBtn" href="#" download
+                    class="block text-center w-full bg-slate-700 hover:bg-slate-600 text-white py-2 rounded-lg transition text-sm">
+                    <i class="fas fa-download mr-2"></i>下载音频
+                </a>
+                <a id="metaBtn" href="#" download
+                    class="block text-center w-full bg-slate-700 hover:bg-slate-600 text-white py-2 rounded-lg transition text-sm">
+                    <i class="fas fa-file-code mr-2"></i>下载元数据 JSON
+                </a>
+                <a id="promoBtn" href="#" download
+                    class="block text-center w-full bg-slate-700 hover:bg-slate-600 text-white py-2 rounded-lg transition text-sm">
+                    <i class="fas fa-file-alt mr-2"></i>下载推广文案 TXT
+                </a>
+            </div>
         </div>
     </div>
 
     <script>
-        // 注意：生产环境请修改此处的 API_BASE 为实际的后端域名（如 https://api.yourdomain.com）
-        // 开发环境默认指向本地 8000 端口
-        const API_BASE = "http://localhost:8000";
+        function resolveApiBase() {
+            const input = document.getElementById('apiBase');
+            const saved = localStorage.getItem('daily_phonk_api_base');
+            if (!input.value) {
+                input.value = saved || "http://localhost:8000";
+            }
+            const v = input.value.trim().replace(/\/+$/, "");
+            localStorage.setItem('daily_phonk_api_base', v);
+            return v;
+        }
 
-        document.getElementById('generateForm').addEventListener('submit', async (e) => {
-            e.preventDefault();
-            
-            const songName = document.getElementById('songName').value;
-            const style = document.getElementById('styleSelect').value;
-            const duration = document.getElementById('duration').value;
-            const backend = document.getElementById('backend').value;
-            
-            const submitBtn = document.getElementById('submitBtn');
+        function setBusy(isBusy) {
+            const previewBtn = document.getElementById('previewBtn');
             const loadingState = document.getElementById('loadingState');
-            const resultBox = document.getElementById('resultBox');
-            
-            submitBtn.disabled = true;
-            submitBtn.classList.add('opacity-50', 'cursor-not-allowed');
-            loadingState.classList.remove('hidden');
-            resultBox.classList.add('hidden');
-            
+            previewBtn.disabled = isBusy;
+            if (isBusy) {
+                previewBtn.classList.add('opacity-50', 'cursor-not-allowed');
+                loadingState.classList.remove('hidden');
+            } else {
+                previewBtn.classList.remove('opacity-50', 'cursor-not-allowed');
+                loadingState.classList.add('hidden');
+            }
+        }
+
+        function hideAllBoxes() {
+            document.getElementById('previewBox').classList.add('hidden');
+            document.getElementById('resultBox').classList.add('hidden');
+        }
+
+        function buildPreviewItem({ songName, style, prompt, audioUrl, seed }) {
+            const container = document.createElement('div');
+            container.className = "p-3 rounded-lg bg-slate-900/60 border border-slate-700 space-y-2";
+
+            const title = document.createElement('div');
+            title.className = "text-sm font-semibold text-white";
+            title.textContent = `Seed ${seed} · ${songName} · ${style.toUpperCase()}`;
+
+            const p = document.createElement('div');
+            p.className = "text-xs text-slate-400";
+            p.textContent = prompt;
+
+            const audio = document.createElement('audio');
+            audio.controls = true;
+            audio.className = "w-full";
+            audio.src = audioUrl;
+
+            const btn = document.createElement('button');
+            btn.type = "button";
+            btn.className = "w-full bg-purple-600 hover:bg-purple-500 text-white font-bold py-2 rounded-lg transition text-sm";
+            btn.textContent = "用这个生成完整版并发布";
+
+            btn.addEventListener('click', async () => {
+                await publishFull({ songName, style, seed });
+            });
+
+            container.appendChild(title);
+            container.appendChild(p);
+            container.appendChild(audio);
+            container.appendChild(btn);
+            return container;
+        }
+
+        async function publishFull({ songName, style, seed }) {
+            const API_BASE = resolveApiBase();
+            const duration = parseInt(document.getElementById('duration').value);
+            const backend = document.getElementById('backend').value;
+            const extra = document.getElementById('extra').value;
+
+            hideAllBoxes();
+            setBusy(true);
             try {
-                const response = await fetch(`${API_BASE}/generate`, {
+                const response = await fetch(`${API_BASE}/publish`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
                         song_name: songName,
                         style: style,
-                        duration: parseInt(duration),
-                        backend: backend
+                        duration: duration,
+                        backend: backend,
+                        seed: seed,
+                        extra_requirements: extra
+                    })
+                });
+
+                if (!response.ok) {
+                    const err = await response.json();
+                    throw new Error(err.detail || '生成失败');
+                }
+
+                const data = await response.json();
+                const resultBox = document.getElementById('resultBox');
+                const audioUrl = `${API_BASE}${data.download_url}`;
+                document.getElementById('resultTitle').textContent = `✅ ${songName} (${style.toUpperCase()} Full)`;
+                document.getElementById('resultPrompt').textContent = `Prompt: ${data.prompt}`;
+                document.getElementById('audioPlayer').src = audioUrl;
+
+                const downloadBtn = document.getElementById('downloadBtn');
+                downloadBtn.href = audioUrl;
+                downloadBtn.download = `${songName}_${style}_full.wav`;
+
+                const metaBtn = document.getElementById('metaBtn');
+                metaBtn.href = `${API_BASE}${data.meta_url}`;
+                metaBtn.download = `${songName}_${style}_meta.json`;
+
+                const promoBtn = document.getElementById('promoBtn');
+                promoBtn.href = `${API_BASE}${data.promo_url}`;
+                promoBtn.download = `${songName}_${style}_promo.txt`;
+
+                resultBox.classList.remove('hidden');
+            } catch (error) {
+                alert(`出错啦: ${error.message}\n请确保后端服务已启动且可访问`);
+            } finally {
+                setBusy(false);
+            }
+        }
+
+        document.getElementById('generateForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const API_BASE = resolveApiBase();
+            const songName = document.getElementById('songName').value;
+            const style = document.getElementById('styleSelect').value;
+            const previewDuration = parseInt(document.getElementById('previewDuration').value);
+            const candidates = parseInt(document.getElementById('candidates').value);
+            const backend = document.getElementById('backend').value;
+            const extra = document.getElementById('extra').value;
+            
+            hideAllBoxes();
+            setBusy(true);
+            
+            try {
+                const response = await fetch(`${API_BASE}/preview`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        song_name: songName,
+                        style: style,
+                        duration: previewDuration,
+                        backend: backend,
+                        candidates: candidates,
+                        extra_requirements: extra
                     })
                 });
                 
@@ -146,26 +304,25 @@
                 }
                 
                 const data = await response.json();
-                
-                // 渲染结果
-                document.getElementById('resultTitle').textContent = `🎧 ${songName} (${style.toUpperCase()} Mix)`;
-                document.getElementById('resultPrompt').textContent = `使用的 Prompt: ${data.info.style_prompt}`;
-                
-                const audioUrl = `${API_BASE}${data.download_url}`;
-                const audioPlayer = document.getElementById('audioPlayer');
-                audioPlayer.src = audioUrl;
-                
-                const downloadBtn = document.getElementById('downloadBtn');
-                downloadBtn.href = audioUrl;
-                downloadBtn.download = `${songName}_${style}.wav`;
-                
-                resultBox.classList.remove('hidden');
+
+                const previewBox = document.getElementById('previewBox');
+                const previewList = document.getElementById('previewList');
+                previewList.innerHTML = "";
+                for (const c of data.candidates) {
+                    const audioUrl = `${API_BASE}${c.download_url}`;
+                    previewList.appendChild(buildPreviewItem({
+                        songName,
+                        style,
+                        prompt: c.prompt,
+                        audioUrl,
+                        seed: c.seed
+                    }));
+                }
+                previewBox.classList.remove('hidden');
             } catch (error) {
-                alert(`出错啦: ${error.message}\n请确保后端服务 (python -m uvicorn src.api:app --reload) 已启动！`);
+                alert(`出错啦: ${error.message}\n请确保后端服务已启动且可访问`);
             } finally {
-                submitBtn.disabled = false;
-                submitBtn.classList.remove('opacity-50', 'cursor-not-allowed');
-                loadingState.classList.add('hidden');
+                setBusy(false);
             }
         });
     </script>

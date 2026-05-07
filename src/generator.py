@@ -365,6 +365,7 @@ def _generate_pattern_track(
 class DailyPhonkGenerator:
     def __init__(self, config_path: str):
         self.config = _load_config(config_path)
+        self._default_duration_seconds = int(self.config.duration_seconds)
         self._neural_model: Optional[MusicgenForConditionalGeneration] = None
         self._neural_processor: Optional[AutoProcessor] = None
 
@@ -379,15 +380,16 @@ class DailyPhonkGenerator:
         style = StyleConfig(id=style_id, probability=1.0, prompt=prompt)
         
         target_backend = backend or self.config.backend
+        duration_seconds = int(duration or self.config.duration_seconds)
         old_duration = self.config.duration_seconds
         if duration:
-            self.config.duration_seconds = duration
+            self.config.duration_seconds = duration_seconds
 
         logger.info(f"自定义生成风格: {style.id}, 后端: {target_backend}")
 
         if target_backend == "neural":
             try:
-                audio = self._generate_neural(style)
+                audio = self._generate_neural(style, duration_seconds=duration_seconds)
             except Exception as e:
                 logger.error(f"神经网络生成失败: {e}，回退使用 DSP 合成")
                 audio = self._generate_dsp(style)
@@ -419,7 +421,7 @@ class DailyPhonkGenerator:
             "style_prompt": style.prompt,
             "date": today.strftime("%Y-%m-%d"),
             "backend": target_backend,
-            "duration": duration or self.config.duration_seconds
+            "duration": duration_seconds
         }
 
     def generate_once(self, seed: int | None = None) -> Dict[str, Any]:
@@ -436,7 +438,7 @@ class DailyPhonkGenerator:
 
         if self.config.backend == "neural":
             try:
-                audio = self._generate_neural(style)
+                audio = self._generate_neural(style, duration_seconds=int(self.config.duration_seconds))
             except Exception as e:
                 logger.error(f"神经网络生成失败: {e}，回退使用 DSP 合成")
                 audio = self._generate_dsp(style)
@@ -511,7 +513,7 @@ class DailyPhonkGenerator:
         self._neural_processor = processor
         self._neural_model = model
 
-    def _generate_neural(self, style: StyleConfig) -> np.ndarray:
+    def _generate_neural(self, style: StyleConfig, duration_seconds: int) -> np.ndarray:
         self._lazy_load_neural()
         assert self._neural_model is not None
         assert self._neural_processor is not None
@@ -519,7 +521,13 @@ class DailyPhonkGenerator:
         cfg = self.config.neural
         device = cfg.get("device", "cpu")
         guidance_scale = float(cfg.get("guidance_scale", 3.0))
-        max_new_tokens = int(cfg.get("max_new_tokens", 1024))
+        base_tokens = int(cfg.get("max_new_tokens", 1024))
+        if duration_seconds <= 0:
+            max_new_tokens = base_tokens
+        else:
+            denom = max(int(self._default_duration_seconds), 1)
+            scaled = int(base_tokens * (duration_seconds / denom))
+            max_new_tokens = max(256, min(base_tokens, scaled))
 
         prompt = style.prompt
         logger.info(f"提示词: {prompt}")
@@ -552,5 +560,4 @@ class DailyPhonkGenerator:
 __all__ = [
     "DailyPhonkGenerator",
 ]
-
 
