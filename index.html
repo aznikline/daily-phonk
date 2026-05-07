@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Daily Phonk - 音乐改编生成器</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        body {
+            background-color: #0f172a;
+            color: #f8fafc;
+            font-family: 'Inter', sans-serif;
+        }
+        .glass-panel {
+            background: rgba(30, 41, 59, 0.7);
+            backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        .neon-glow {
+            text-shadow: 0 0 10px rgba(168, 85, 247, 0.5), 0 0 20px rgba(168, 85, 247, 0.3);
+        }
+        .loader {
+            border: 4px solid rgba(255, 255, 255, 0.1);
+            border-left-color: #a855f7;
+            border-radius: 50%;
+            width: 24px;
+            height: 24px;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+    </style>
+</head>
+<body class="min-h-screen flex items-center justify-center p-4 bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900">
+
+    <div class="glass-panel rounded-2xl p-8 max-w-lg w-full shadow-2xl">
+        <div class="text-center mb-8">
+            <h1 class="text-4xl font-bold mb-2 neon-glow text-purple-400">Daily Phonk</h1>
+            <p class="text-slate-400 text-sm">热门改编引擎 - 抖音/汽水同款神曲生成</p>
+        </div>
+
+        <form id="generateForm" class="space-y-6">
+            <div>
+                <label for="songName" class="block text-sm font-medium text-slate-300 mb-1">输入歌名 / 歌手</label>
+                <input type="text" id="songName" required placeholder="例如：告白气球、周杰伦" 
+                    class="w-full bg-slate-800 border border-slate-600 rounded-lg px-4 py-3 text-white placeholder-slate-500 focus:outline-none focus:border-purple-500 focus:ring-1 focus:ring-purple-500 transition">
+            </div>
+
+            <div>
+                <label for="styleSelect" class="block text-sm font-medium text-slate-300 mb-1">选择改编风格</label>
+                <select id="styleSelect" 
+                    class="w-full bg-slate-800 border border-slate-600 rounded-lg px-4 py-3 text-white focus:outline-none focus:border-purple-500 focus:ring-1 focus:ring-purple-500 transition appearance-none">
+                    <!-- 动态加载选项 -->
+                    <option value="dj">DJ 舞曲版 (高燃)</option>
+                    <option value="slowed">慢速回响版 (氛围)</option>
+                    <option value="lyrical">抒情钢琴版 (走心)</option>
+                    <option value="phonk">暗黑 Phonk (经典)</option>
+                    <option value="trap">Trap 节奏 (说唱)</option>
+                    <option value="synthwave">合成器波 (复古80s)</option>
+                </select>
+            </div>
+
+            <div class="flex items-center space-x-4">
+                <div class="flex-1">
+                    <label for="duration" class="block text-sm font-medium text-slate-300 mb-1">时长 (秒)</label>
+                    <input type="number" id="duration" value="30" min="10" max="120"
+                        class="w-full bg-slate-800 border border-slate-600 rounded-lg px-4 py-3 text-white focus:outline-none focus:border-purple-500 transition">
+                </div>
+                <div class="flex-1">
+                    <label for="backend" class="block text-sm font-medium text-slate-300 mb-1">生成引擎</label>
+                    <select id="backend" class="w-full bg-slate-800 border border-slate-600 rounded-lg px-4 py-3 text-white focus:outline-none focus:border-purple-500 transition">
+                        <option value="neural">AI (高质慢速)</option>
+                        <option value="dsp">DSP (秒出测试)</option>
+                    </select>
+                </div>
+            </div>
+
+            <button type="submit" id="submitBtn" 
+                class="w-full bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 text-white font-bold py-3 px-4 rounded-lg shadow-lg transform transition hover:-translate-y-0.5 flex items-center justify-center gap-2">
+                <i class="fas fa-magic"></i>
+                <span>立即改编</span>
+            </button>
+        </form>
+
+        <!-- 加载状态 -->
+        <div id="loadingState" class="hidden mt-8 text-center space-y-3">
+            <div class="flex justify-center"><div class="loader"></div></div>
+            <p class="text-purple-400 font-medium animate-pulse">AI 正在混音中，请稍候...</p>
+            <p class="text-slate-500 text-xs">（初次加载模型可能需要几分钟）</p>
+        </div>
+
+        <!-- 结果展示 -->
+        <div id="resultBox" class="hidden mt-8 p-4 bg-slate-800 rounded-xl border border-purple-500/30">
+            <h3 class="text-lg font-bold text-white mb-2" id="resultTitle">生成成功！</h3>
+            <p class="text-sm text-slate-400 mb-4" id="resultPrompt"></p>
+            
+            <audio id="audioPlayer" controls class="w-full mb-4">
+                <source src="" type="audio/wav">
+                您的浏览器不支持音频播放。
+            </audio>
+            
+            <a id="downloadBtn" href="#" download
+                class="block text-center w-full bg-slate-700 hover:bg-slate-600 text-white py-2 rounded-lg transition text-sm">
+                <i class="fas fa-download mr-2"></i>保存至本地
+            </a>
+        </div>
+    </div>
+
+    <script>
+        // 注意：生产环境请修改此处的 API_BASE 为实际的后端域名（如 https://api.yourdomain.com）
+        // 开发环境默认指向本地 8000 端口
+        const API_BASE = "http://localhost:8000";
+
+        document.getElementById('generateForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const songName = document.getElementById('songName').value;
+            const style = document.getElementById('styleSelect').value;
+            const duration = document.getElementById('duration').value;
+            const backend = document.getElementById('backend').value;
+            
+            const submitBtn = document.getElementById('submitBtn');
+            const loadingState = document.getElementById('loadingState');
+            const resultBox = document.getElementById('resultBox');
+            
+            submitBtn.disabled = true;
+            submitBtn.classList.add('opacity-50', 'cursor-not-allowed');
+            loadingState.classList.remove('hidden');
+            resultBox.classList.add('hidden');
+            
+            try {
+                const response = await fetch(`${API_BASE}/generate`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        song_name: songName,
+                        style: style,
+                        duration: parseInt(duration),
+                        backend: backend
+                    })
+                });
+                
+                if (!response.ok) {
+                    const err = await response.json();
+                    throw new Error(err.detail || '生成失败');
+                }
+                
+                const data = await response.json();
+                
+                // 渲染结果
+                document.getElementById('resultTitle').textContent = `🎧 ${songName} (${style.toUpperCase()} Mix)`;
+                document.getElementById('resultPrompt').textContent = `使用的 Prompt: ${data.info.style_prompt}`;
+                
+                const audioUrl = `${API_BASE}${data.download_url}`;
+                const audioPlayer = document.getElementById('audioPlayer');
+                audioPlayer.src = audioUrl;
+                
+                const downloadBtn = document.getElementById('downloadBtn');
+                downloadBtn.href = audioUrl;
+                downloadBtn.download = `${songName}_${style}.wav`;
+                
+                resultBox.classList.remove('hidden');
+            } catch (error) {
+                alert(`出错啦: ${error.message}\n请确保后端服务 (python -m uvicorn src.api:app --reload) 已启动！`);
+            } finally {
+                submitBtn.disabled = false;
+                submitBtn.classList.remove('opacity-50', 'cursor-not-allowed');
+                loadingState.classList.add('hidden');
+            }
+        });
+    </script>
+</body>
+</html>
